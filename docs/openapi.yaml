@@ -1,0 +1,587 @@
+openapi: 3.0.3
+info:
+  title: API CODET I — version 1
+  version: "1.0.0"
+  description: |
+    API REST de gestion du Comité de Développement du Village Tchuelekouet I.
+    Périmètre V1 : membres, exercices et tarifs, cartes annuelles, paiements
+    mobile money et ventilation, reversement annuel de 20 %, rapports d'AG,
+    messages et statistiques.
+
+    Authentification : jeton Bearer délivré par `POST /v1/connexion` (Laravel Sanctum).
+servers:
+  - url: https://api.codet1.org/api
+    description: Production
+  - url: http://localhost:8000/api
+    description: Développement
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Authentification
+  - name: Espace membre
+  - name: Membres
+  - name: Exercices et tarifs
+  - name: Cartes annuelles
+  - name: Paiements
+  - name: Contributions
+  - name: Reversement
+  - name: Rapports d'AG
+  - name: Messages
+  - name: Statistiques
+
+paths:
+  /v1/connexion:
+    post:
+      tags: [Authentification]
+      summary: Connexion par e-mail ou téléphone
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifiant, mot_de_passe]
+              properties:
+                identifiant:  { type: string, example: "+237600000000" }
+                mot_de_passe: { type: string, format: password }
+      responses:
+        "200":
+          description: Jeton d'accès et profil utilisateur
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /v1/profil:
+    get:
+      tags: [Authentification]
+      summary: Profil de l'utilisateur connecté
+      responses:
+        "200": { description: Profil }
+
+  /v1/deconnexion:
+    post:
+      tags: [Authentification]
+      summary: Révoque le jeton courant
+      responses:
+        "200": { description: Déconnexion effectuée }
+
+  /v1/mon-espace/tableau-de-bord:
+    get:
+      tags: [Espace membre]
+      summary: Synthèse personnelle (carte en cours, solde, total cotisé)
+      responses:
+        "200": { description: Synthèse }
+
+  /v1/mon-espace/paiements:
+    get:
+      tags: [Espace membre]
+      summary: Historique des paiements du membre connecté
+      responses:
+        "200": { description: Liste paginée }
+
+  /v1/membres:
+    get:
+      tags: [Membres]
+      summary: Liste des membres
+      parameters:
+        - { name: recherche,    in: query, schema: { type: string } }
+        - { name: statut,       in: query, schema: { type: string, enum: [actif, inactif, decede] } }
+        - { name: categorie_id, in: query, schema: { type: integer } }
+        - { name: par_page,     in: query, schema: { type: integer, default: 25 } }
+      responses:
+        "200": { description: Liste paginée de membres }
+    post:
+      tags: [Membres]
+      summary: Créer un membre (le matricule est généré automatiquement)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MembreEntree" }
+      responses:
+        "201": { description: Membre créé }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /v1/membres/{membre}:
+    parameters:
+      - { name: membre, in: path, required: true, schema: { type: integer } }
+    get:
+      tags: [Membres]
+      summary: Fiche détaillée d'un membre
+      responses:
+        "200": { description: Membre }
+    put:
+      tags: [Membres]
+      summary: Modifier un membre
+      responses:
+        "200": { description: Membre mis à jour }
+
+  /v1/membres/{membre}/suspendre:
+    post:
+      tags: [Membres]
+      summary: Suspendre un membre (aucune suppression physique)
+      parameters:
+        - { name: membre, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Membre suspendu }
+
+  /v1/membres/{membre}/compte:
+    post:
+      tags: [Membres]
+      summary: Ouvrir l'accès du membre à son espace personnel
+      description: |
+        Crée le compte de connexion du membre et renvoie un mot de passe
+        provisoire. **Ce mot de passe n'est renvoyé qu'ici, une seule fois** : il
+        n'est stocké nulle part en clair. Le membre se connecte ensuite avec son
+        téléphone ou son e-mail, et doit choisir son propre mot de passe.
+      parameters:
+        - { name: membre, in: path, required: true, schema: { type: integer } }
+      responses:
+        "201":
+          description: Accès créé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  donnees:
+                    type: object
+                    properties:
+                      identifiants:
+                        type: array
+                        items: { type: string }
+                        example: ["+237690000000", "membre@exemple.cm"]
+                      mot_de_passe_provisoire: { type: string, example: "K7RQ3МNP" }
+                  message: { type: string }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /v1/membres/{membre}/compte/reinitialiser:
+    post:
+      tags: [Membres]
+      summary: Réinitialiser le mot de passe d'un membre
+      description: Renvoie un nouveau mot de passe provisoire et ferme les sessions ouvertes.
+      parameters:
+        - { name: membre, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Mot de passe réinitialisé }
+
+  /v1/membres/{membre}/compte/suspendre:
+    post:
+      tags: [Membres]
+      summary: Suspendre l'accès d'un membre
+      parameters:
+        - { name: membre, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Accès suspendu }
+
+  /v1/mot-de-passe:
+    post:
+      tags: [Authentification]
+      summary: Changer son mot de passe
+      description: |
+        Lève l'obligation de changement issue d'un mot de passe provisoire,
+        révoque les autres sessions et renvoie un jeton neuf pour poursuivre
+        sans se reconnecter.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ancien_mot_de_passe, nouveau_mot_de_passe, nouveau_mot_de_passe_confirmation]
+              properties:
+                ancien_mot_de_passe: { type: string, format: password }
+                nouveau_mot_de_passe: { type: string, format: password, minLength: 8 }
+                nouveau_mot_de_passe_confirmation: { type: string, format: password }
+      responses:
+        "200": { description: Jeton renouvelé et profil à jour }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /v1/exercices:
+    get:
+      tags: [Exercices et tarifs]
+      summary: Liste des exercices
+      responses:
+        "200": { description: Liste }
+    post:
+      tags: [Exercices et tarifs]
+      summary: Ouvrir un nouvel exercice
+      responses:
+        "201": { description: Exercice créé }
+
+  /v1/exercices/{exercice}/cloturer:
+    post:
+      tags: [Exercices et tarifs]
+      summary: Clôturer l'exercice et figer le reversement annuel
+      parameters:
+        - { name: exercice, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Exercice clôturé }
+
+  /v1/tarifs:
+    get:
+      tags: [Exercices et tarifs]
+      summary: Tarifs en vigueur
+      responses:
+        "200": { description: Liste des tarifs }
+    post:
+      tags: [Exercices et tarifs]
+      summary: Enregistrer une nouvelle version de tarif
+      description: |
+        La version précédente est automatiquement clôturée par sa date de fin de
+        validité : les cartes déjà émises conservent leur tarif d'origine.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TarifEntree" }
+      responses:
+        "201": { description: Nouvelle version enregistrée }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /v1/types-cartes:
+    get:
+      tags: [Exercices et tarifs]
+      summary: Types de cartes disponibles
+      responses:
+        "200": { description: Liste des types }
+    post:
+      tags: [Exercices et tarifs]
+      summary: Créer un type de carte
+      description: |
+        Par exemple « Carte de membre d'honneur ». Le tarif et sa clé de
+        répartition se définissent ensuite via `POST /v1/tarifs`.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [libelle]
+              properties:
+                libelle:     { type: string, example: "Carte de membre d'honneur" }
+                description: { type: string }
+                obligatoire: { type: boolean, default: false }
+      responses:
+        "201": { description: Type créé }
+
+  /v1/destinations-fonds:
+    get:
+      tags: [Exercices et tarifs]
+      summary: Destinations des fonds et leur taux de reversement au CODET I
+      responses:
+        "200": { description: Liste des destinations }
+
+  /v1/destinations-fonds/{destination}:
+    patch:
+      tags: [Exercices et tarifs]
+      summary: Modifier le libellé ou le taux de reversement d'une destination
+      parameters:
+        - { name: destination, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Destination mise à jour }
+
+  /v1/contributions/{contribution}/statut:
+    patch:
+      tags: [Contributions]
+      summary: Mettre à jour le statut d'une contribution
+      description: |
+        « reçue » ne concerne que les dons matériels ou en services. Une
+        contribution financière devient « encaissée » par l'enregistrement de
+        son paiement, jamais par un changement manuel.
+      parameters:
+        - { name: contribution, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [statut]
+              properties:
+                statut:         { type: string, enum: [attendue, encaissee, recue, annulee] }
+                date_reception: { type: string, format: date }
+                observation:    { type: string }
+      responses:
+        "200": { description: Statut mis à jour }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /v1/cartes:
+    get:
+      tags: [Cartes annuelles]
+      summary: Liste des cartes de développement
+      responses:
+        "200": { description: Liste paginée }
+    post:
+      tags: [Cartes annuelles]
+      summary: Émettre une carte pour un membre et un exercice
+      responses:
+        "201": { description: Carte émise }
+        "422": { description: Carte déjà existante ou exercice clôturé }
+
+  /v1/cartes/{carte}/impression:
+    get:
+      tags: [Cartes annuelles]
+      summary: Données d'impression de la carte unique de développement
+      description: |
+        Renvoie les informations du recto (part revenant au groupement) et du
+        verso (montant total, village d'origine), ainsi que les mentions du
+        gabarit, toutes issues des paramètres.
+
+        Deux refus possibles, vérifiés côté serveur :
+        la carte n'est pas intégralement réglée, ou son exercice est clôturé.
+        Un membre ne peut demander que sa propre carte.
+      parameters:
+        - { name: carte, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Données du gabarit
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  donnees:
+                    type: object
+                    properties:
+                      carte:
+                        type: object
+                        properties:
+                          numero:             { type: string, example: "CART-2026-000125" }
+                          exercice:           { type: integer, example: 2026 }
+                          montant_total:      { type: integer, example: 5000 }
+                          montant_groupement: { type: integer, example: 2500 }
+                      membre:   { type: object }
+                      mentions: { type: object }
+        "403": { description: Carte d'un autre membre }
+        "422": { description: Carte non soldée ou exercice clôturé }
+
+  /v1/cartes/impayes:
+    get:
+      tags: [Cartes annuelles]
+      summary: État des impayés de l'exercice
+      responses:
+        "200": { description: Liste des cartes impayées ou partiellement réglées }
+
+  /v1/paiements/initier:
+    post:
+      tags: [Paiements]
+      summary: Initier un paiement mobile money
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaiementEnLigne" }
+      responses:
+        "201": { description: Demande envoyée à l'opérateur }
+        "422": { $ref: "#/components/responses/Validation" }
+
+  /v1/paiements/manuel:
+    post:
+      tags: [Paiements]
+      summary: Enregistrer un encaissement hors ligne (espèces, virement)
+      responses:
+        "201": { description: Paiement validé, ventilé et reçu émis }
+
+  /v1/paiements/{paiement}/statut:
+    get:
+      tags: [Paiements]
+      summary: Statut courant d'un paiement
+      parameters:
+        - { name: paiement, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Statut }
+
+  /v1/webhooks/orange-money:
+    post:
+      tags: [Paiements]
+      summary: Notification Orange Money
+      security: []
+      responses:
+        "200": { description: Notification traitée }
+        "401": { description: Signature invalide }
+
+  /v1/webhooks/mtn-momo:
+    post:
+      tags: [Paiements]
+      summary: Notification MTN Mobile Money
+      security: []
+      responses:
+        "200": { description: Notification traitée }
+
+  /v1/contributions:
+    get:
+      tags: [Contributions]
+      summary: Liste des contributions et dons
+      responses:
+        "200": { description: Liste paginée }
+    post:
+      tags: [Contributions]
+      summary: Enregistrer une contribution (membre OU donateur externe)
+      responses:
+        "201": { description: Contribution enregistrée }
+
+  /v1/exercices/{exercice}/reversement/simulation:
+    get:
+      tags: [Reversement]
+      summary: Simuler le reversement de 20 % sans écriture
+      parameters:
+        - { name: exercice, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Assiette, taux et montant estimé
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reversement" }
+
+  /v1/exercices/{exercice}/reversement/calculer:
+    post:
+      tags: [Reversement]
+      summary: Calculer et enregistrer le reversement annuel
+      parameters:
+        - { name: exercice, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Reversement calculé }
+
+  /v1/rapports-ag:
+    get:
+      tags: [Rapports d'AG]
+      summary: Rapports d'Assemblée Générale
+      description: Les membres ne voient que les rapports publiés ; les administrateurs voient aussi les brouillons.
+      responses:
+        "200": { description: Liste paginée }
+    post:
+      tags: [Rapports d'AG]
+      summary: Déposer un rapport (statut brouillon)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                exercice_id:  { type: integer }
+                intitule:     { type: string }
+                date_ag:      { type: string, format: date }
+                type_rapport: { type: string, enum: [proces_verbal, rapport_moral, rapport_financier, resolutions, annexe] }
+                fichiers:     { type: array, items: { type: string, format: binary } }
+      responses:
+        "201": { description: Rapport déposé }
+
+  /v1/rapports-ag/{rapport}/publier:
+    post:
+      tags: [Rapports d'AG]
+      summary: Publier le rapport — il devient visible par tous les membres
+      parameters:
+        - { name: rapport, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Rapport publié }
+
+  /v1/rapports-ag/{rapport}/documents/{document}:
+    get:
+      tags: [Rapports d'AG]
+      summary: Télécharger une pièce (téléchargement journalisé)
+      parameters:
+        - { name: rapport,  in: path, required: true, schema: { type: integer } }
+        - { name: document, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Fichier }
+        "403": { description: Document non public }
+
+  /v1/messages:
+    get:
+      tags: [Messages]
+      summary: Messages adressés au comité
+      responses:
+        "200": { description: Liste paginée }
+    post:
+      tags: [Messages]
+      summary: Envoyer un message avec pièces jointes
+      responses:
+        "201": { description: Message envoyé }
+
+  /v1/statistiques/tableau-de-bord:
+    get:
+      tags: [Statistiques]
+      summary: Indicateurs du tableau de bord exécutif
+      parameters:
+        - { name: exercice_id, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Indicateurs financiers, membres et cotisations }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+
+  responses:
+    Validation:
+      description: Erreur de validation
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              message: { type: string }
+              errors:  { type: object, additionalProperties: { type: array, items: { type: string } } }
+
+  schemas:
+    MembreEntree:
+      type: object
+      required: [nom, sexe, telephone, categorie_membre_id]
+      properties:
+        nom:                 { type: string }
+        prenom:              { type: string, nullable: true }
+        sexe:                { type: string, enum: [M, F] }
+        date_naissance:      { type: string, format: date, nullable: true }
+        profession:          { type: string, nullable: true }
+        telephone:           { type: string }
+        email:               { type: string, format: email, nullable: true }
+        categorie_membre_id: { type: integer }
+        ville_id:            { type: integer, nullable: true }
+        quartier:            { type: string, nullable: true }
+        adresse:             { type: string, nullable: true }
+        date_adhesion:       { type: string, format: date, nullable: true }
+
+    TarifEntree:
+      type: object
+      required: [exercice_id, type_carte_id, montant_minimum, repartitions]
+      description: |
+        La répartition est libre : autant de destinations que nécessaire, une
+        seule à 100 % si la totalité revient au CODET I. La somme des lignes
+        doit être strictement égale au montant minimum.
+      properties:
+        exercice_id:         { type: integer }
+        type_carte_id:       { type: integer }
+        categorie_membre_id:
+          type: integer
+          nullable: true
+          description: Nul pour une carte non liée à une catégorie (carte d'honneur…).
+        montant_minimum:     { type: integer, example: 100000 }
+        repartitions:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [destination_fonds_id, montant]
+            properties:
+              destination_fonds_id: { type: integer }
+              montant:              { type: integer, example: 100000 }
+
+    PaiementEnLigne:
+      type: object
+      required: [montant, moyen_paiement, numero_telephone]
+      properties:
+        carte_developpement_id: { type: integer, nullable: true }
+        contribution_id:        { type: integer, nullable: true }
+        montant:                { type: integer, example: 10500 }
+        moyen_paiement:         { type: string, enum: [ORANGE_MONEY, MTN_MOMO] }
+        numero_telephone:       { type: string, example: "+237690000000" }
+
+    Reversement:
+      type: object
+      properties:
+        exercice:        { type: integer, example: 2026 }
+        assiette:        { type: integer, example: 1250000 }
+        taux_applique:   { type: number,  example: 20 }
+        montant_reverse: { type: integer, example: 250000 }
