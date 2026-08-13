@@ -77,6 +77,11 @@ class ReferentielSeeder extends Seeder
             ['code' => 'NOM_COMITE',        'libelle' => 'Nom du comité',        'valeur' => 'CODET I', 'type_valeur' => 'texte'],
             ['code' => 'DEVISE',            'libelle' => 'Devise',               'valeur' => 'FCFA', 'type_valeur' => 'texte'],
 
+            // En-tête des états PDF édités par le comité
+            ['code' => 'COMITE_NOM_COMPLET', 'libelle' => 'Documents — nom complet du comité', 'valeur' => 'Comité de Développement du Village Tchuelekouet I', 'type_valeur' => 'texte'],
+            ['code' => 'COMITE_TELEPHONE',   'libelle' => 'Documents — téléphone',             'valeur' => '(237) 695 43 95 02', 'type_valeur' => 'texte'],
+            ['code' => 'COMITE_EMAIL',       'libelle' => 'Documents — adresse e-mail',        'valeur' => 'codet1@bangang.info', 'type_valeur' => 'texte'],
+
             // Mentions imprimées sur la carte unique de développement.
             // Elles se modifient depuis l'écran Paramètres, sans toucher au gabarit.
             ['code' => 'CARTE_SIGLE',        'libelle' => 'Carte — sigle du comité supérieur', 'valeur' => 'CO.SU.DE.G.BANG', 'type_valeur' => 'texte'],

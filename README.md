@@ -132,6 +132,129 @@ son taux. Le détail est conservé dans l'enregistrement : modifier un taux plus
 tard n'altère jamais les exercices déjà calculés.
 
 
+## Cycle de vie d'une contribution
+
+| Nature | Passage à l'état final | Qui agit |
+|---|---|---|
+| Financière | *Encaissée* **automatiquement**, dès que les paiements validés couvrent le montant | Personne : c'est l'enregistrement du paiement qui décide |
+| Matérielle ou en services | *Reçue*, par constat explicite | L'administrateur, à la réception du bien ou du service |
+| Toute nature | *Annulée*, tant qu'elle est *Attendue* | L'administrateur |
+
+L'API refuse un passage manuel à *Encaissée* sans paiement validé : aucun montant
+ne peut figurer aux recettes sans trace d'encaissement correspondante. Elle refuse
+aussi d'enregistrer un paiement sur un don en nature, qui n'a pas de flux financier.
+
+Un versement partiel ne solde pas la contribution : elle reste *Attendue*, l'écran
+affiche le reste à encaisser et propose « Compléter ». Elle bascule en *Encaissée*
+au dernier franc.
+
+## Statut d'un membre
+
+Un membre n'est **jamais supprimé**. Ses cotisations, ses dons et ses cartes
+restent aux comptes du comité : les effacer rendrait faux les états financiers
+des exercices passés, y compris ceux déjà présentés en assemblée.
+
+| Statut | Ce qu'il produit | Réversible |
+|---|---|---|
+| **Actif** | Situation normale | — |
+| **Inactif** (suspendu) | Sort des listes actives, accès fermé et sessions révoquées, plus d'appel à cotisation, aucune carte émissible | Oui, à tout moment |
+| **Décédé** | Retiré des envois et des appels à cotisation, fiche et historique conservés | Non — corriger la fiche en cas d'erreur |
+
+La suspension exige un **motif**, conservé sur la fiche avec la date : six mois
+plus tard, personne ne se souvient pourquoi tel ressortissant a été écarté. Le
+motif s'affiche dans la liste et en bandeau sur la fiche, et la réactivation le
+rappelle avant de lever la décision.
+
+Le décès est volontairement distinct : ce n'est pas une sanction, il ne se lève
+pas, et le confondre avec une suspension conduirait à relancer une famille en
+deuil pour une cotisation.
+
+
+## Courriels aux membres
+
+L'administration écrit à un membre en particulier, ou à une sélection : tous les
+actifs, une catégorie, un sexe, une ville, un pays, ou une **situation de
+cotisation** — à jour, en retard, sans carte pour l'exercice. C'est ce dernier
+critère qui rend la fonction utile : « tous les membres en retard sur 2026 »
+est l'appel que le trésorier envoie avant chaque assemblée.
+
+**Beaucoup de ressortissants n'ont qu'un numéro de téléphone.** Chaque sélection
+annonce donc deux nombres : les membres qui seront atteints, et ceux qui ne le
+seront pas faute d'adresse, avec leur téléphone pour être joints autrement.
+L'aperçu et l'envoi partagent le même code de sélection : le nombre annoncé
+avant envoi est exactement celui obtenu.
+
+Les envois passent par la **file d'attente**, un travail par destinataire. Un
+collectif de trois cents membres ne bloque pas la requête du secrétaire, et
+l'échec d'une adresse n'interrompt pas les suivantes. Chaque destinataire
+conserve son statut — en attente, envoyé, échoué — avec le motif d'échec.
+
+Configuration nécessaire dans `.env` :
+
+```dotenv
+MAIL_MAILER=smtp
+MAIL_HOST=
+MAIL_PORT=587
+MAIL_USERNAME=
+MAIL_PASSWORD=
+MAIL_ENCRYPTION=tls
+MAIL_FROM_ADDRESS="codet1@bangang.info"
+MAIL_FROM_NAME="CODET I"
+```
+
+Et un consommateur de file en service :
+
+```bash
+php artisan queue:work --tries=3
+```
+
+Sans ce processus, les envois restent en attente indéfiniment. En production,
+placez-le sous supervision (systemd ou supervisor) pour qu'il redémarre seul.
+
+Chaque campagne est conservée avec ses destinataires : le comité doit pouvoir
+dire qui a été convoqué et quand. Une convocation d'assemblée est un acte
+administratif, pas un simple courriel.
+
+
+## États PDF
+
+Deux documents sont éditables par l'administration, avec en-tête du comité
+(sigle, nom complet, village, groupement, récépissé, contacts) tiré des
+paramètres :
+
+| Document | Contenu |
+|---|---|
+| **Ventes de cartes** d'un exercice | Une ligne par carte : noms et prénoms, matricule, ville de résidence, type de carte, montants encaissés pour le groupement, le village et le congrès, total réglé, reste dû. Ligne de totaux et encadré de rapprochement. |
+| **Historique d'un membre** | Une ligne par exercice cotisé, avec ventilation, montant dû, réglé et reste dû. Se termine par la situation : exercices avec impayé et total, ou mention « à jour ». |
+| **Contributions et dons** d'un exercice | Une ligne par contribution : référence, origine, nature, objet, montant, date, statut. Récapitulatif séparant les dons financiers encaissés de la valeur estimée des dons en nature. |
+
+**Les montants affichés sont ceux réellement encaissés**, c'est-à-dire les
+affectations des paiements validés — pas les parts théoriques du tarif. Un
+membre qui n'a réglé que la moitié de sa carte apparaît donc pour la moitié de
+chaque poste. C'est la seule lecture exploitable par le trésorier, et elle
+garantit que la somme des trois colonnes égale le total encaissé.
+
+Les dons financiers et les dons en nature ne se totalisent jamais ensemble :
+les premiers entrent en caisse, les seconds ne sont qu'une valeur estimée
+portée aux comptes. L'état le rappelle explicitement sous le récapitulatif.
+
+Les états reprennent **les filtres de l'écran** (exercice, statut, nature, type de carte) : le document correspond exactement à la liste affichée.
+Dès qu'un filtre est actif, un bandeau en tête précise lequel et rappelle que
+les totaux ne portent que sur les lignes retenues — sans quoi une liste
+partielle pourrait être présentée en assemblée comme l'état complet.
+
+La génération repose sur `barryvdh/laravel-dompdf`, installé par le script
+d'installation. Si vous avez installé le projet à la main :
+
+```bash
+composer require barryvdh/laravel-dompdf
+```
+
+Les gabarits sont dans `resources/views/pdf/`. La numérotation des pages passe
+par le canevas dompdf plutôt que par un script dans le gabarit, ce qui évite
+d'activer l'exécution de PHP dans le moteur de rendu.
+
+
 ## Impression de la carte unique de développement
 
 Le gabarit reproduit la carte physique du groupement, recto-verso, au format

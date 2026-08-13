@@ -33,6 +33,8 @@ class MembreResource extends JsonResource
             'photo'          => $this->photo,
             'date_adhesion'  => $this->date_adhesion?->toDateString(),
             'statut'         => $this->statut,
+            'motif_statut'   => $this->motif_statut,
+            'date_changement_statut' => $this->date_changement_statut?->toDateString(),
             'cartes'         => CarteResource::collection($this->whenLoaded('cartes')),
             'contributions'  => $this->whenLoaded('contributions', fn () => $this->contributions->map(fn ($contribution) => [
                 'id'                => $contribution->id,

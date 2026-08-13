@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CarteController;
 use App\Http\Controllers\Api\V1\CompteMembreController;
 use App\Http\Controllers\Api\V1\ContributionController;
+use App\Http\Controllers\Api\V1\CourrielController;
 use App\Http\Controllers\Api\V1\EspaceMembreController;
 use App\Http\Controllers\Api\V1\ExerciceController;
 use App\Http\Controllers\Api\V1\ImpressionCarteController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\Api\V1\MembreController;
 use App\Http\Controllers\Api\V1\MessageController;
 use App\Http\Controllers\Api\V1\PaiementController;
 use App\Http\Controllers\Api\V1\RapportAgController;
+use App\Http\Controllers\Api\V1\RapportPdfController;
 use App\Http\Controllers\Api\V1\ReferentielController;
 use App\Http\Controllers\Api\V1\ReversementController;
 use App\Http\Controllers\Api\V1\StatistiqueController;
@@ -67,6 +69,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::apiResource('membres', MembreController::class)->except('destroy');
         Route::post('membres/{membre}/suspendre', [MembreController::class, 'suspendre'])->name('membres.suspendre');
         Route::post('membres/{membre}/reactiver', [MembreController::class, 'reactiver'])->name('membres.reactiver');
+        Route::post('membres/{membre}/decede', [MembreController::class, 'declarerDecede'])->name('membres.decede');
 
         // --- Accès des membres à leur espace personnel
         Route::post('membres/{membre}/compte', [CompteMembreController::class, 'store'])->name('membres.compte.creer');
@@ -126,6 +129,20 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::post('messages', [MessageController::class, 'store'])->name('messages.store');
         Route::post('messages/{message}/repondre', [MessageController::class, 'repondre'])->name('messages.repondre');
         Route::post('messages/{message}/traite', [MessageController::class, 'marquerTraite'])->name('messages.traite');
+        Route::get('messages/{message}/documents/{document}', [MessageController::class, 'telecharger'])->name('messages.telecharger');
+
+        // --- Courriels aux membres
+        Route::get('courriels', [CourrielController::class, 'index'])->name('courriels.index');
+        Route::post('courriels/apercu', [CourrielController::class, 'apercu'])->name('courriels.apercu');
+        Route::post('courriels', [CourrielController::class, 'envoyer'])->name('courriels.envoyer');
+        Route::get('courriels/{campagne}', [CourrielController::class, 'show'])->name('courriels.show');
+
+        // --- États PDF
+        Route::get('exports/ventes-cartes.pdf', [RapportPdfController::class, 'ventesCartes'])->name('exports.ventes-cartes');
+        Route::get('exports/exercices/{exercice}/ventes-cartes.pdf', [RapportPdfController::class, 'ventesCartes'])->name('exports.ventes-cartes.exercice');
+        Route::get('exports/membres/{membre}/historique.pdf', [RapportPdfController::class, 'historiqueMembre'])->name('exports.historique-membre');
+        Route::get('exports/contributions.pdf', [RapportPdfController::class, 'contributions'])->name('exports.contributions');
+        Route::get('exports/exercices/{exercice}/contributions.pdf', [RapportPdfController::class, 'contributions'])->name('exports.contributions.exercice');
 
         // --- Tableau de bord et statistiques
         Route::get('statistiques/tableau-de-bord', [StatistiqueController::class, 'tableauDeBord'])->name('statistiques.tableau-de-bord');

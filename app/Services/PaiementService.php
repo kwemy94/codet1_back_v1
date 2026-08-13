@@ -73,7 +73,13 @@ class PaiementService
             }
 
             if ($paiement->contribution_id) {
-                $paiement->contribution->update(['statut' => 'encaissee']);
+                // Un versement partiel ne solde pas la contribution : elle reste
+                // « attendue » tant que la totalité n'est pas entrée en caisse.
+                $contribution = $paiement->contribution->fresh();
+
+                if ($contribution->estCouverte()) {
+                    $contribution->update(['statut' => 'encaissee']);
+                }
             }
 
             $this->journal->tracer('paiement_valide', $paiement, membreId: $paiement->membre_id);
@@ -155,6 +161,25 @@ class PaiementService
         if (! $contribution->exercice->estOuvert()) {
             throw ValidationException::withMessages([
                 'contribution_id' => "L'exercice {$contribution->exercice->annee} est clôturé.",
+            ]);
+        }
+
+        if ($contribution->statut === 'annulee') {
+            throw ValidationException::withMessages([
+                'contribution_id' => 'Cette contribution a été annulée : elle ne peut plus être encaissée.',
+            ]);
+        }
+
+        if ($contribution->estMaterielle()) {
+            throw ValidationException::withMessages([
+                'contribution_id' => "Un don en nature ou en services n'a pas de flux financier. "
+                    .'Constatez sa réception plutôt que d\'enregistrer un paiement.',
+            ]);
+        }
+
+        if ((int) $donnees['montant'] > $contribution->solde) {
+            throw ValidationException::withMessages([
+                'montant' => "Il reste {$contribution->solde} FCFA à encaisser sur cette contribution.",
             ]);
         }
 

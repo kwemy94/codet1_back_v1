@@ -23,6 +23,7 @@ class ContributionController extends Controller
     public function index(Request $requete)
     {
         $contributions = Contribution::with('membre', 'donateur', 'type', 'exercice')
+            ->withSum(['paiements as montant_regle' => fn ($requete) => $requete->where('statut', 'valide')], 'montant')
             ->when($requete->query('exercice_id'), fn ($q, $v) => $q->where('exercice_id', $v))
             ->when($requete->query('membre_id'), fn ($q, $v) => $q->where('membre_id', $v))
             ->when($requete->query('statut'), fn ($q, $v) => $q->where('statut', $v))
@@ -77,7 +78,7 @@ class ContributionController extends Controller
 
     public function show(Contribution $contribution)
     {
-        return $this->reponse($contribution->load('membre', 'donateur', 'type', 'exercice', 'paiements', 'justificatifs'));
+        return $this->reponse($contribution->load('membre', 'donateur', 'type', 'exercice', 'paiements.moyenPaiement', 'justificatifs'));
     }
 
     /**

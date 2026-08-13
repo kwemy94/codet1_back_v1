@@ -39,8 +39,11 @@ php artisan install:api --no-interaction
 echo "→ Retrait de la migration users par défaut (remplacée par celle du projet)"
 rm -f database/migrations/0001_01_01_000000_create_users_table.php
 
+echo "→ Installation de la génération PDF (dompdf)"
+composer require barryvdh/laravel-dompdf --no-interaction
+
 echo "→ Copie des fichiers métier"
-for dossier in app database routes config docs lang; do
+for dossier in app database routes config docs lang resources; do
   mkdir -p "$dossier"
   cp -R "$SOURCE/$dossier/." "$dossier/"
 done
@@ -98,6 +101,10 @@ Squelette prêt. Il reste deux étapes, à faire à la main :
 2. Créez le schéma et les données de référence :
      php artisan migrate --seed
      php artisan serve
+
+3. Pour les envois de courriels, renseignez les variables MAIL_* dans .env
+   et lancez un consommateur de file :
+     php artisan queue:work --tries=3
 
 L'API répondra sur http://localhost:8000/api/v1
 Connexion initiale : ADMIN_EMAIL / ADMIN_MOT_DE_PASSE (à changer aussitôt).

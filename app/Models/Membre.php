@@ -17,7 +17,7 @@ class Membre extends Model
         'matricule', 'nom', 'prenom', 'sexe', 'date_naissance', 'profession',
         'telephone', 'email', 'categorie_membre_id', 'ville_id', 'quartier',
         'adresse', 'photo', 'contact_urgence_nom', 'contact_urgence_telephone',
-        'date_adhesion', 'statut',
+        'date_adhesion', 'statut', 'motif_statut', 'date_changement_statut',
     ];
 
     protected function casts(): array
@@ -25,6 +25,7 @@ class Membre extends Model
         return [
             'date_naissance' => 'date',
             'date_adhesion'  => 'date',
+            'date_changement_statut' => 'date',
         ];
     }
 

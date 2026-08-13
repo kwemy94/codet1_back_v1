@@ -41,4 +41,27 @@ class Message extends Model
     {
         return $this->morphMany(Document::class, 'documentable');
     }
+
+    /**
+     * Laravel sérialise les relations sous leur nom camelCase (`piecesJointes`).
+     * On expose `pieces_jointes`, conforme au reste de l'API, pour que
+     * l'interface n'ait pas à connaître cette exception.
+     */
+    public function toArray(): array
+    {
+        $donnees = parent::toArray();
+
+        if ($this->relationLoaded('piecesJointes')) {
+            $donnees['pieces_jointes'] = $this->piecesJointes->map(fn (Document $document) => [
+                'id'          => $document->id,
+                'nom_fichier' => $document->nom_fichier,
+                'type_mime'   => $document->type_mime,
+                'taille'      => (int) $document->taille,
+            ])->values()->all();
+
+            unset($donnees['pieces_jointes_count']);
+        }
+
+        return $donnees;
+    }
 }

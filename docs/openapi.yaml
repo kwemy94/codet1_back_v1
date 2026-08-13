@@ -120,11 +120,67 @@ paths:
   /v1/membres/{membre}/suspendre:
     post:
       tags: [Membres]
-      summary: Suspendre un membre (aucune suppression physique)
+      summary: Suspendre un membre — réversible, motif obligatoire
+      description: |
+        Le membre sort des listes actives, son accès est fermé et ses sessions
+        révoquées ; il ne reçoit plus d'appel à cotisation et aucune carte ne
+        peut lui être émise. **Aucune donnée n'est supprimée** : ses cotisations
+        et ses dons restent aux comptes du comité, sans quoi les états
+        financiers des exercices passés deviendraient faux.
+        La décision se lève par `POST /membres/{id}/reactiver`.
       parameters:
         - { name: membre, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motif]
+              properties:
+                motif:
+                  type: string
+                  example: "Départ du groupement, décision du bureau du 12 mars"
       responses:
         "200": { description: Membre suspendu }
+        "422": { description: Motif manquant, ou membre déjà enregistré comme décédé }
+
+  /v1/membres/{membre}/reactiver:
+    post:
+      tags: [Membres]
+      summary: Lever la suspension d'un membre
+      parameters:
+        - { name: membre, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                motif: { type: string, description: Observation facultative }
+      responses:
+        "200": { description: Membre réactivé }
+        "422": { description: Un membre décédé ne peut pas être réactivé }
+
+  /v1/membres/{membre}/decede:
+    post:
+      tags: [Membres]
+      summary: Enregistrer le décès d'un membre
+      description: |
+        Constat distinct de la suspension : il n'est pas motivé par un
+        manquement et n'est pas destiné à être levé. La fiche et l'historique
+        sont conservés.
+      parameters:
+        - { name: membre, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                date_deces: { type: string, format: date }
+      responses:
+        "200": { description: Statut enregistré }
 
   /v1/membres/{membre}/compte:
     post:
@@ -498,6 +554,170 @@ paths:
       responses:
         "201": { description: Message envoyé }
 
+  /v1/exports/ventes-cartes.pdf:
+    get:
+      tags: [Statistiques]
+      summary: Historique des ventes de cartes de l'exercice en cours (PDF)
+      parameters:
+        - name: statut
+          in: query
+          schema: { type: string, enum: [impayee, partielle, soldee, annulee] }
+          description: Reprend le filtre de l'écran. Le document signale alors qu'il est partiel.
+        - name: type_carte_id
+          in: query
+          schema: { type: integer }
+      description: |
+        État paysage A4 avec en-tête du comité. Une ligne par carte émise :
+        noms et prénoms, matricule, ville de résidence, type de carte, puis les
+        montants **effectivement encaissés** par destination — groupement,
+        village, congrès — le total réglé et le reste dû, avec une ligne de
+        totaux et un encadré de rapprochement.
+      responses:
+        "200":
+          description: Fichier PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "403": { description: Réservé à l'administration }
+        "422": { description: Aucun exercice ouvert }
+
+  /v1/exports/exercices/{exercice}/ventes-cartes.pdf:
+    get:
+      tags: [Statistiques]
+      summary: Historique des ventes de cartes d'un exercice donné (PDF)
+      parameters:
+        - { name: exercice, in: path, required: true, schema: { type: integer } }
+        - { name: statut, in: query, schema: { type: string, enum: [impayee, partielle, soldee, annulee] } }
+        - { name: type_carte_id, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Fichier PDF }
+
+  /v1/exports/contributions.pdf:
+    get:
+      tags: [Contributions]
+      summary: État des contributions et dons de l'exercice en cours (PDF)
+      description: |
+        Une ligne par contribution : référence, origine, nature, objet, montant,
+        date et statut. Le récapitulatif distingue les **dons financiers
+        encaissés** — qui entrent en caisse — de la **valeur estimée des dons en
+        nature et en services**, qui n'y entrent pas : les deux montants ne
+        s'additionnent pas.
+      parameters:
+        - { name: statut, in: query, schema: { type: string, enum: [attendue, encaissee, recue, annulee] } }
+        - { name: nature, in: query, schema: { type: string, enum: [financier, materiel, service] } }
+      responses:
+        "200": { description: Fichier PDF }
+        "403": { description: Réservé à l'administration }
+        "422": { description: Aucun exercice ouvert }
+
+  /v1/exports/exercices/{exercice}/contributions.pdf:
+    get:
+      tags: [Contributions]
+      summary: État des contributions et dons d'un exercice donné (PDF)
+      parameters:
+        - { name: exercice, in: path, required: true, schema: { type: integer } }
+        - { name: statut, in: query, schema: { type: string, enum: [attendue, encaissee, recue, annulee] } }
+        - { name: nature, in: query, schema: { type: string, enum: [financier, materiel, service] } }
+      responses:
+        "200": { description: Fichier PDF }
+
+  /v1/exports/membres/{membre}/historique.pdf:
+    get:
+      tags: [Statistiques]
+      summary: Historique complet d'un membre, tous exercices (PDF)
+      description: |
+        Une ligne par exercice cotisé, avec la ventilation encaissée, le montant
+        dû, le montant réglé et le reste dû. Le document se termine par la
+        situation du membre : liste des exercices avec impayé et total, ou
+        mention explicite qu'il est à jour.
+      parameters:
+        - { name: membre, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Fichier PDF }
+        "403": { description: Réservé à l'administration }
+
+  /v1/messages/{message}/documents/{document}:
+    get:
+      tags: [Messages]
+      summary: Télécharger une pièce jointe d'un message
+      description: |
+        Réservé à l'auteur du message et aux administrateurs. Le contrôle porte
+        sur le message parent : un identifiant de document deviné ne donne rien.
+        Chaque téléchargement est journalisé.
+      parameters:
+        - { name: message, in: path, required: true, schema: { type: integer } }
+        - { name: document, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Fichier }
+        "403": { description: Pièce jointe du message d'un autre membre }
+        "404": { description: Pièce introuvable ou non rattachée à ce message }
+
+  /v1/courriels/apercu:
+    post:
+      tags: [Messages]
+      summary: Aperçu d'une sélection de destinataires
+      description: |
+        Renvoie combien de membres seront atteints et **combien ne le seront
+        pas, faute d'adresse e-mail** — information essentielle : beaucoup de
+        ressortissants n'ont qu'un numéro de téléphone.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CriteresCourriel" }
+      responses:
+        "200":
+          description: Sélection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  donnees:
+                    type: object
+                    properties:
+                      nombre_retenus:      { type: integer, example: 187 }
+                      nombre_sans_adresse: { type: integer, example: 94 }
+                      retenus:             { type: array, items: { type: object } }
+                      sans_adresse:        { type: array, items: { type: object } }
+
+  /v1/courriels:
+    get:
+      tags: [Messages]
+      summary: Historique des envois
+      responses:
+        "200": { description: Liste paginée }
+    post:
+      tags: [Messages]
+      summary: Envoyer un courriel à un membre ou à une sélection
+      description: |
+        Les envois sont mis en file d'attente, un par destinataire : un collectif
+        de trois cents membres ne bloque pas la requête, et l'échec d'une adresse
+        n'interrompt pas les suivantes. Chaque destinataire garde son statut.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/CriteresCourriel"
+                - type: object
+                  required: [objet, contenu]
+                  properties:
+                    objet:   { type: string, example: "Convocation à l'assemblée générale" }
+                    contenu: { type: string }
+      responses:
+        "201": { description: Envoi lancé }
+        "422": { description: Aucun destinataire avec adresse e-mail }
+
+  /v1/courriels/{campagne}:
+    get:
+      tags: [Messages]
+      summary: Détail d'un envoi et statut de chaque destinataire
+      parameters:
+        - { name: campagne, in: path, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: Détail }
+
   /v1/statistiques/tableau-de-bord:
     get:
       tags: [Statistiques]
@@ -577,6 +797,29 @@ components:
         montant:                { type: integer, example: 10500 }
         moyen_paiement:         { type: string, enum: [ORANGE_MONEY, MTN_MOMO] }
         numero_telephone:       { type: string, example: "+237690000000" }
+
+    CriteresCourriel:
+      type: object
+      properties:
+        criteres:
+          type: object
+          description: |
+            `membre_ids` l'emporte sur tous les autres critères : il sert à
+            l'envoi individuel. Sans lui, la sélection porte par défaut sur les
+            membres **actifs**.
+          properties:
+            membre_ids:   { type: array, items: { type: integer } }
+            categorie_id: { type: integer, nullable: true }
+            ville_id:     { type: integer, nullable: true }
+            pays_id:      { type: integer, nullable: true }
+            sexe:         { type: string, enum: [M, F], nullable: true }
+            statut:       { type: string, enum: [actif, inactif], default: actif }
+            situation:
+              type: string
+              enum: [a_jour, en_retard, sans_carte]
+              nullable: true
+              description: Situation de cotisation sur l'exercice de référence.
+            exercice_id:  { type: integer, nullable: true }
 
     Reversement:
       type: object

@@ -15,6 +15,8 @@ class Contribution extends Model
         'date_reception', 'observation', 'enregistre_par',
     ];
 
+    protected $appends = ['montant_regle', 'solde'];
+
     protected function casts(): array
     {
         return ['date_contribution' => 'date', 'date_reception' => 'date'];
@@ -48,6 +50,29 @@ class Contribution extends Model
     public function justificatifs(): MorphMany
     {
         return $this->morphMany(Document::class, 'documentable');
+    }
+
+    /**
+     * Montant déjà encaissé. Utilise la somme préchargée par `withSum` lorsqu'elle
+     * est disponible, pour éviter une requête par ligne dans les listes.
+     */
+    public function getMontantRegleAttribute($valeur): int
+    {
+        if ($valeur !== null) {
+            return (int) $valeur;
+        }
+
+        return (int) $this->paiements()->where('statut', 'valide')->sum('montant');
+    }
+
+    public function getSoldeAttribute(): int
+    {
+        return max(0, (int) $this->montant - $this->montant_regle);
+    }
+
+    public function estCouverte(): bool
+    {
+        return $this->solde === 0;
     }
 
     public function estMaterielle(): bool

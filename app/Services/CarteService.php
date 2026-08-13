@@ -27,6 +27,13 @@ class CarteService
             ]);
         }
 
+        if ($membre->statut !== 'actif') {
+            throw ValidationException::withMessages([
+                'membre_id' => "{$membre->nom_complet} n'est pas actif : "
+                    .'réactivez-le avant de lui émettre une carte.',
+            ]);
+        }
+
         $existante = $membre->cartes()
             ->where('exercice_id', $exercice->id)
             ->where('type_carte_id', $type->id)

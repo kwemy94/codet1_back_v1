@@ -9,6 +9,7 @@ use App\Models\Membre;
 use App\Services\JournalService;
 use App\Services\MatriculeService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class MembreController extends Controller
 {
@@ -74,22 +75,110 @@ class MembreController extends Controller
         return $this->reponse(new MembreResource($membre->fresh('categorie', 'ville')), 'Membre mis à jour.');
     }
 
-    /** Suspension : le membre n'est jamais supprimé, son statut passe à « inactif ». */
-    public function suspendre(Membre $membre)
+    /**
+     * Suspension d'un membre.
+     *
+     * Un membre n'est jamais supprimé : ses cotisations, ses dons et ses cartes
+     * restent aux comptes du comité, sans quoi les états financiers des années
+     * passées deviendraient faux. La suspension est **réversible** — elle sort
+     * le membre des listes actives et ferme son accès, rien de plus.
+     */
+    public function suspendre(Request $requete, Membre $membre)
     {
-        $membre->update(['statut' => 'inactif']);
-        $membre->compte?->update(['statut' => 'suspendu']);
-        $this->journal->tracer('suspension_membre', $membre, membreId: $membre->id);
+        $donnees = $requete->validate([
+            'motif' => ['required', 'string', 'max:255'],
+        ]);
 
-        return $this->reponse(new MembreResource($membre), 'Membre suspendu.');
+        if ($membre->statut === 'decede') {
+            throw ValidationException::withMessages([
+                'statut' => 'Ce membre est enregistré comme décédé.',
+            ]);
+        }
+
+        $ancien = $membre->only(['statut', 'motif_statut']);
+
+        $membre->update([
+            'statut'                 => 'inactif',
+            'motif_statut'           => $donnees['motif'],
+            'date_changement_statut' => now()->toDateString(),
+        ]);
+
+        // L'accès est fermé et les sessions ouvertes révoquées.
+        $membre->compte?->update(['statut' => 'suspendu']);
+        $membre->compte?->tokens()->delete();
+
+        $this->journal->tracer(
+            'suspension_membre',
+            $membre,
+            ancienneValeur: $ancien,
+            nouvelleValeur: $membre->only(['statut', 'motif_statut']),
+            membreId: $membre->id,
+        );
+
+        return $this->reponse(new MembreResource($membre->fresh()), "{$membre->nom_complet} est suspendu.");
     }
 
-    public function reactiver(Membre $membre)
+    /** Réactivation : le membre retrouve sa place et son accès. */
+    public function reactiver(Request $requete, Membre $membre)
     {
-        $membre->update(['statut' => 'actif']);
-        $membre->compte?->update(['statut' => 'actif']);
-        $this->journal->tracer('reactivation_membre', $membre, membreId: $membre->id);
+        if ($membre->statut === 'decede') {
+            throw ValidationException::withMessages([
+                'statut' => "Un membre enregistré comme décédé ne peut pas être réactivé. "
+                    .'Corrigez son statut depuis la modification de sa fiche si le constat était erroné.',
+            ]);
+        }
 
-        return $this->reponse(new MembreResource($membre), 'Membre réactivé.');
+        $ancien = $membre->only(['statut', 'motif_statut']);
+
+        $membre->update([
+            'statut'                 => 'actif',
+            'motif_statut'           => $requete->input('motif'),
+            'date_changement_statut' => now()->toDateString(),
+        ]);
+
+        $membre->compte?->update(['statut' => 'actif']);
+
+        $this->journal->tracer(
+            'reactivation_membre',
+            $membre,
+            ancienneValeur: $ancien,
+            nouvelleValeur: $membre->only(['statut', 'motif_statut']),
+            membreId: $membre->id,
+        );
+
+        return $this->reponse(new MembreResource($membre->fresh()), "{$membre->nom_complet} est réactivé.");
+    }
+
+    /**
+     * Constat de décès. Distinct de la suspension : il n'est pas motivé par un
+     * manquement, il n'est pas destiné à être levé, et il retire définitivement
+     * le membre des envois et des appels à cotisation.
+     */
+    public function declarerDecede(Request $requete, Membre $membre)
+    {
+        $donnees = $requete->validate([
+            'date_deces' => ['nullable', 'date', 'before_or_equal:today'],
+        ]);
+
+        $ancien = $membre->only(['statut', 'motif_statut']);
+
+        $membre->update([
+            'statut'                 => 'decede',
+            'motif_statut'           => 'Décès constaté',
+            'date_changement_statut' => $donnees['date_deces'] ?? now()->toDateString(),
+        ]);
+
+        $membre->compte?->update(['statut' => 'suspendu']);
+        $membre->compte?->tokens()->delete();
+
+        $this->journal->tracer(
+            'deces_membre',
+            $membre,
+            ancienneValeur: $ancien,
+            nouvelleValeur: $membre->only(['statut', 'date_changement_statut']),
+            membreId: $membre->id,
+        );
+
+        return $this->reponse(new MembreResource($membre->fresh()), 'Statut enregistré.');
     }
 }
