@@ -94,12 +94,14 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         // --- Cartes annuelles de développement
         Route::get('cartes/impayes', [CarteController::class, 'impayes'])->name('cartes.impayes');
         Route::get('cartes/{carte}/impression', ImpressionCarteController::class)->name('cartes.impression');
+        Route::post('cartes/lot', [CarteController::class, 'emettreEnLot'])->name('cartes.lot');
         Route::apiResource('cartes', CarteController::class)->only(['index', 'store', 'show']);
 
         // --- Paiements
         Route::get('paiements', [PaiementController::class, 'index'])->name('paiements.index');
         Route::post('paiements/initier', [PaiementController::class, 'initier'])->name('paiements.initier');
         Route::post('paiements/manuel', [PaiementController::class, 'enregistrerManuel'])->name('paiements.manuel');
+        Route::post('paiements/lot', [PaiementController::class, 'encaisserEnLot'])->name('paiements.lot');
         Route::get('paiements/{paiement}', [PaiementController::class, 'show'])->name('paiements.show');
         Route::get('paiements/{paiement}/statut', [PaiementController::class, 'statut'])->name('paiements.statut');
         Route::post('paiements/{paiement}/annuler', [PaiementController::class, 'annuler'])->name('paiements.annuler');
